@@ -766,6 +766,38 @@ def _empirical_direct_ntk_fn(f: ApplyFn,
 
   return ntk_fn
 
+def jacobian_calculator(f: ApplyFn, trace_axes: Axes = (-1,), diagonal_axes: Axes = (), vmap_axes: VMapAxes = None) \
+  -> Callable[[NTTree[np.ndarray], Optional[NTTree[np.ndarray]], PyTree], NTTree[np.ndarray]]:
+
+  def _jacobian_calc(x1: NTTree[np.ndarray],
+             x2: Optional[NTTree[np.ndarray]] = None,
+             params: PyTree = None,
+             **apply_fn_kwargs) -> np.ndarray:
+
+    kwargs1, kwargs2 = utils.split_kwargs(apply_fn_kwargs, x1, x2)
+    fx1 = eval_shape(f, params, x1, **kwargs1)
+    x_axis, fx_axis, kw_axes = _canonicalize_axes(vmap_axes, x1, fx1, **kwargs1)
+
+    keys = apply_fn_kwargs.keys()
+    args1, args2 = (kwargs1[k] for k in keys), (kwargs2[k] for k in keys)
+
+    def j_fn(x, *args):
+      _kwargs = {k: v for k, v in zip(keys, args)}
+      fx = _get_f_params(f, x, x_axis, fx_axis, kw_axes, **_kwargs)
+      jx = jacobian(fx)(params)
+      return jx
+
+    if x_axis is not None or kw_axes:
+      in_axes = [x_axis] + [kw_axes[k] if k in kw_axes else None for k in keys]
+      j_fn = vmap(j_fn, in_axes=in_axes, out_axes=fx_axis)
+
+    j1 = j_fn(x1, *args1)
+    j2 = None if x2 is None else j_fn(x2, *args2)
+    return j1, j2
+
+  return _jacobian_calc
+
+
 
 # INTERNAL UTILITIES
 
