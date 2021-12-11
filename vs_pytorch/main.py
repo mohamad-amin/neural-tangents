@@ -30,6 +30,8 @@ def main(config, logger):
     device = torch.device(device)
     num_devices = torch.cuda.device_count()
 
+    import IPython; IPython.embed()
+
     dataloaders = dataloader_builder.build(config, logger)
     models = model_builder.build(model_config, data_config, logger)
 
