@@ -16,7 +16,7 @@ import utils
 import wide_resnet
 import model_builder
 import dataloader_builder
-from vs_pytorch.ntk_computer import compute_ntk
+from ntk_computer import compute_ntk
 
 
 def main(config, logger):
