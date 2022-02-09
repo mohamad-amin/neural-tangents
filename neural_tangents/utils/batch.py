@@ -45,11 +45,11 @@ Example:
 from typing import Callable, Tuple, Union, Dict, Any, TypeVar, Iterable, Optional
 from functools import partial
 import warnings
+import jax
 from jax import device_put, devices
 from jax import jit
 from jax import pmap
 from jax.interpreters.pxla import ShardedDeviceArray
-from jax.lib import xla_bridge
 from jax import random
 import jax.numpy as np
 from jax.tree_util import tree_all
@@ -101,7 +101,10 @@ def batch(kernel_fn: KernelFn,
   input_req = getattr(kernel_fn, 'input_req', {})
   dropout_in_analytic_kernel = input_req.get('use_dropout', False)
   use_multidevice = device_count > 0 or (device_count == -1 and
-                                         xla_bridge.device_count() > 1)
+                                         jax.device_count() > 1)
+
+  print('Hello?')
+
   use_serial = bool(batch_size)
   if use_multidevice:
     kernel_fn = _parallel(kernel_fn, use_serial,
@@ -372,6 +375,8 @@ def _serial(kernel_fn: KernelFn,
         kwargs_other[k] = v
 
     def row_fn(_, x1):
+      print('Inside row_fn')
+      import IPython; IPython.embed()
       return _, _scan(col_fn, x1, (x2s, kwargs_np2))[1]
 
     def col_fn(x1, x2):
@@ -381,7 +386,12 @@ def _serial(kernel_fn: KernelFn,
           **kwargs_other,
           **dict((k, (kwargs1[k], kwargs2[k])) for k in kwargs1)
       }
+      print('Inside col_fn')
+      import IPython; IPython.embed()
       return (x1, kwargs1), kernel_fn(x1, x2, *args, **kwargs_merge)
+
+    print(13)
+    import IPython; IPython.embed()
 
     _, kernel = _scan(row_fn, 0, (x1s, kwargs_np1))
     return flatten(kernel, x2_is_none)
@@ -442,6 +452,10 @@ def _serial(kernel_fn: KernelFn,
 
     cov2_is_none = utils.nt_tree_fn(reduce=lambda k: all(k))(lambda k:
                                                              k.cov2 is None)(k)
+
+    print(12)
+    import IPython; IPython.embed()
+
     _, k = _scan(row_fn, 0, (n1s, kwargs_np1))
     if cov2_is_none:
       k = _set_cov2_is_none(k)
@@ -452,6 +466,8 @@ def _serial(kernel_fn: KernelFn,
                 x2: Optional[NTTree[Optional[np.ndarray]]] = None,
                 *args,
                 **kwargs) -> NTTree[Kernel]:
+    print(11)
+    import IPython; IPython.embed()
     if utils.is_nt_tree_of(x1_or_kernel, (onp.ndarray, np.ndarray)):
       return serial_fn_x1(x1_or_kernel, x2, *args, **kwargs)
     elif utils.is_nt_tree_of(x1_or_kernel, Kernel):
@@ -460,6 +476,10 @@ def _serial(kernel_fn: KernelFn,
       return serial_fn_kernel(x1_or_kernel, *args, **kwargs)
     else:
       raise TypeError(x1_or_kernel, type(x1_or_kernel))
+
+  print('Serial now #########################')
+  print(10)
+  import IPython; IPython.embed()
 
   return serial_fn
 
@@ -504,7 +524,7 @@ def _parallel(kernel_fn: KernelFn,
   """
 
   if device_count == -1:
-    device_count = xla_bridge.device_count()
+    device_count = jax.device_count()
 
   def _check_dropout(n1, n2, kwargs):
     dropout_in_empirical_kernel = getattr(kwargs, 'rng', None) is not None
@@ -527,6 +547,9 @@ def _parallel(kernel_fn: KernelFn,
     elif not n1_per_device:
       _device_count = ragged
       n1_per_device = 1
+
+    print(4)
+    import IPython; IPython.embed()
 
     return n1_per_device, _device_count
 
@@ -554,6 +577,9 @@ def _parallel(kernel_fn: KernelFn,
       input_shape = x.shape[1:]
       return np.reshape(x, (_device_count, n1_per_device,) + input_shape)
 
+    print(3)
+    import IPython; IPython.embed()
+
     for k, v in kwargs.items():
       if _is_np_ndarray(v):
         assert isinstance(v, tuple) and len(v) == 2
@@ -573,6 +599,9 @@ def _parallel(kernel_fn: KernelFn,
         n2 = k.cov2.shape[0]
       return n1, n2
 
+    print(3)
+    import IPython; IPython.embed()
+
     n1, n2 = get_batch_sizes(kernel)
     _check_dropout(n1, n2, kwargs)
     n1_per_device, _device_count = _get_n_per_device(n1, n2)
@@ -589,12 +618,17 @@ def _parallel(kernel_fn: KernelFn,
 
   @utils.wraps(kernel_fn)
   def parallel_fn(x1_or_kernel, x2=None, *args, **kwargs):
+    print(2)
+    import IPython; IPython.embed()
     if utils.is_nt_tree_of(x1_or_kernel, (onp.ndarray, np.ndarray)):
       return parallel_fn_x1(x1_or_kernel, x2, *args, **kwargs)
     elif utils.is_nt_tree_of(x1_or_kernel, Kernel):
       assert not x2
       return parallel_fn_kernel(x1_or_kernel, *args, **kwargs)
     raise NotImplementedError()
+
+  print(1)
+  import IPython; IPython.embed()
 
   # Set function attributes so that `serial` can detect whether or not it is
   # acting on a parallel function.
@@ -681,7 +715,7 @@ def _get_jit_or_pmap_broadcast() -> Callable[[Callable, int], Callable]:
     key = (f, device_count)
 
     if device_count == -1:
-      device_count = xla_bridge.device_count()
+      device_count = jax.device_count()
 
     # TODO(romann): adapt this when JAX allows `axis_in` for `pmap`.
     def broadcast(arg: np.ndarray) -> np.ndarray:
